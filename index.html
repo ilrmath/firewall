@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>FireWallシミュレーション - 脅威検知特化版</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --text: #c9d1d9;
+    --accent: #1f6feb;
+    --success: #2ecc71;
+    --danger: #e74c3c;
+    --warning: #f1c40f;
+    --web-color: #3498db;
+    --mail-color: #9b59b6;
+    --terminal-bg: #000000;
+  }
+
+  body {
+    font-family: 'Segoe UI', 'Hiragino Kaku Gothic ProN', sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0; padding: 10px;
+    height: 100vh; display: flex; flex-direction: column;
+    box-sizing: border-box; overflow: hidden;
+  }
+
+  header {
+    display: flex; align-items: center; gap: 20px;
+    padding-bottom: 10px; border-bottom: 1px solid #30363d; margin-bottom: 10px;
+  }
+  header h1 { margin: 0; font-size: 22px; flex-shrink: 0; }
+  
+  .top-mode-selection { display: flex; gap: 10px; flex-grow: 1; }
+  .mode-btn {
+    flex: 1; padding: 10px; font-size: 15px; font-weight: bold;
+    border: 2px solid #30363d; background: #21262d; color: var(--text);
+    cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .mode-btn.active-web { border-color: var(--web-color); box-shadow: 0 0 10px var(--web-color); }
+  .mode-btn.active-mail { border-color: var(--mail-color); box-shadow: 0 0 10px var(--mail-color); }
+  .mode-btn.active-ddos { border-color: var(--danger); background: #301010; box-shadow: 0 0 10px var(--danger); }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    grid-template-rows: 1.4fr 0.6fr;
+    gap: 15px; flex-grow: 1; overflow: hidden;
+  }
+
+  .visualizer {
+    grid-row: 1 / span 2;
+    background: #000; border: 2px solid #30363d; border-radius: 12px;
+    position: relative; overflow: hidden;
+  }
+  .fw-gate {
+    position: absolute; left: 50%; top: 0; bottom: 0; width: 70px;
+    background: rgba(48, 54, 61, 0.95); transform: translateX(-50%); z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    writing-mode: vertical-rl; font-size: 14px; color: #8b949e; letter-spacing: 4px;
+    border-left: 1px solid #444; border-right: 1px solid #444;
+  }
+  .emergency { background: rgba(218, 54, 51, 0.7) !important; color: white !important; box-shadow: 0 0 20px var(--danger); }
+  .zone-label { position: absolute; top: 12px; font-size: 13px; font-weight: bold; color: #444; letter-spacing: 1px; }
+
+  .alert-msg {
+    position: absolute; top: 15%; left: 50%; transform: translateX(-50%);
+    background: rgba(231, 76, 60, 0.95); color: white; padding: 15px 30px;
+    border-radius: 8px; font-weight: bold; z-index: 100; border: 2px solid white;
+    display: none; animation: blinker 0.8s infinite; text-align: center;
+  }
+  @keyframes blinker { 50% { opacity: 0.5; } }
+
+  .side-card {
+    background: var(--panel); border: 2px solid #30363d; border-radius: 10px;
+    padding: 12px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .card-title { font-size: 14px; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+
+  .rule-section { margin-bottom: 10px; }
+  .section-label { font-size: 11px; color: #8b949e; margin-bottom: 5px; font-weight: bold; }
+  .rule-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
+  .ip-txt { color: #58a6ff; font-weight: bold; font-family: monospace; }
+  
+  select { padding: 4px; background: #0d1117; color: white; border: 1px solid var(--accent); border-radius: 4px; }
+  select.auto-blocked { background: var(--warning) !important; color: #000 !important; font-weight: bold; border-color: #fff; }
+
+  .stats-area { height: 200px; display: flex; align-items: flex-end; gap: 2px; background: #000; padding: 5px; border: 1px solid #222; }
+  .bar-stack { flex: 1; display: flex; flex-direction: column-reverse; }
+  .b-allow { background: var(--success); width: 100%; transition: height 0.3s ease; }
+  .b-deny { background: var(--danger); width: 100%; transition: height 0.3s ease; }
+
+  .terminal-area { flex-grow: 1; background: var(--terminal-bg); overflow-y: scroll; padding: 8px; font-family: 'Courier New', monospace; font-size: 11px; border-radius: 4px; border: 1px solid #222; line-height: 1.3; }
+  .log-pass { color: var(--success); font-weight: bold; }
+  .log-deny { color: var(--danger); font-weight: bold; }
+  .log-sys { color: #888; }
+
+  .packet { position: absolute; display: flex; flex-direction: column; align-items: center; z-index: 5; }
+  .packet-icon { font-size: 42px; }
+  .packet-ip { font-size: 12px; font-weight: bold; background: #fff; color: #000; padding: 2px 6px; border-radius: 4px; margin-top: 4px; border: 2px solid #58a6ff; }
+  .judgement { position: absolute; font-weight: 900; font-size: 34px; z-index: 20; animation: fadeUp 0.8s forwards; text-shadow: 0 0 10px #000; }
+  @keyframes fadeUp { 0% { transform: scale(0.3); opacity: 0; } 30% { transform: scale(1.6); opacity: 1; } 100% { transform: scale(1.3); opacity: 0; transform: translateY(-30px); } }
+
+</style>
+</head>
+<body>
+
+<header>
+  <h1>FireWallシミュレーション</h1>
+  <div class="top-mode-selection">
+    <button id="btn-web" class="mode-btn active-web" onclick="setMode('web')">🖼️ Webモード</button>
+    <button id="btn-mail" class="mode-btn" onclick="setMode('mail')">✉️ Mailモード</button>
+    <button id="btn-ddos" class="mode-btn" onclick="toggleDDoS()">⚡ セキュリティ分析(DDoS/漏洩)</button>
+  </div>
+</header>
+
+<div class="dashboard-grid">
+  <div class="visualizer" id="stage">
+    <div id="alert-msg" class="alert-msg">⚠ メッセージ</div>
+    <div class="fw-gate" id="fw-gate">FIREWALL</div>
+    <div class="zone-label" style="left:15px;">EXTERNAL (外部)</div>
+    <div class="zone-label" style="right:15px;">INTERNAL (内部)</div>
+  </div>
+
+  <div class="side-card">
+    <div class="card-title" id="rule-title">フィルタ規則設定</div>
+    <div class="rule-section">
+      <div class="section-label">内部 (100.x.x.x系)</div>
+      <div class="rule-row"><span><span class="ip-txt">100.168.x.x</span> から</span><select id="rule-100-168"><option value="allow">許可</option><option value="deny">遮断</option></select></div>
+      <div class="rule-row"><span><span class="ip-txt">100.31.x.x</span> から</span><select id="rule-100-31"><option value="allow">許可</option><option value="deny">遮断</option></select></div>
+      <div class="section-label" style="margin-top:8px;">外部 (200.x.x.x系)</div>
+      <div class="rule-row"><span><span class="ip-txt">200.51.x.x</span> から</span><select id="rule-200-51"><option value="allow">許可</option><option value="deny" selected>遮断</option></select></div>
+      <div class="rule-row"><span><span class="ip-txt">225.92.x.x</span> から</span><select id="rule-225-92"><option value="allow">許可</option><option value="deny" selected>遮断</option></select></div>
+    </div>
+    <div class="card-title" style="margin-top:auto;">トラフィック密度 (積上サンプリング)</div>
+    <div class="stats-area" id="chart"></div>
+  </div>
+
+  <div class="side-card">
+    <div class="card-title">TERMINAL - COMMUNICATION LOG</div>
+    <div class="terminal-area" id="term-body">
+      <div class="log-sys">> Firewall engine online. Monitoring packets...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentMode = 'web', isDDoS = false, ddosTimer = null, attackSource = "";
+  const stage = document.getElementById('stage'), fwGate = document.getElementById('fw-gate');
+  const termBody = document.getElementById('term-body'), alertMsg = document.getElementById('alert-msg');
+  const barCount = 40;
+  let histAllow = Array(barCount).fill(0), histDeny = Array(barCount).fill(0), curAllow = 0, curDeny = 0;
+
+  for(let i=0; i<barCount; i++){
+    const s = document.createElement('div'); s.className='bar-stack';
+    s.innerHTML = `<div class="b-allow"></div><div class="b-deny"></div>`;
+    document.getElementById('chart').appendChild(s);
+  }
+
+  function setMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active-web', 'active-mail'));
+    document.getElementById('btn-'+mode).classList.add('active-'+mode);
+  }
+
+  function toggleDDoS() {
+    isDDoS = !isDDoS;
+    const btn = document.getElementById('btn-ddos'), selects = document.querySelectorAll('select');
+    if (isDDoS) {
+      btn.classList.add('active-ddos'); fwGate.classList.add('emergency');
+      
+      // 攻撃方向をランダム決定
+      attackSource = Math.random() > 0.5 ? "external" : "internal";
+      alertMsg.innerText = attackSource === "external" ? "⚠ 外部からの大量データ送信を検知" : "⚠ 内部からの大量データ流出を検知";
+      alertMsg.style.display = "block";
+      
+      // 自動遮断発動
+      selects.forEach(s => { s.value = 'deny'; s.classList.add('auto-blocked'); });
+      
+      // 攻撃パケットの生成
+      ddosTimer = setInterval(() => {
+        // 攻撃方向のみを大量発生させる
+        createPacket(true, attackSource === "internal"); 
+      }, 80);
+    } else {
+      btn.classList.remove('active-ddos'); fwGate.classList.remove('emergency');
+      alertMsg.style.display = "none";
+      selects.forEach(s => { s.classList.remove('auto-blocked'); if(s.id.includes('100')) s.value='allow'; });
+      clearInterval(ddosTimer);
+    }
+  }
+
+  function addLog(ip, result) {
+    const log = document.createElement('div');
+    log.className = result === 'PASS' ? 'log-pass' : 'log-deny';
+    log.innerHTML = `[${new Date().toLocaleTimeString('ja-JP', {hour12:false})}] ${currentMode.toUpperCase()} | ${result.padEnd(4)} | ${ip}`;
+    termBody.appendChild(log);
+    termBody.scrollTop = termBody.scrollHeight;
+  }
+
+  function createPacket(isAtk=false, isIntAtk=false) {
+    const key = isAtk ? (isIntAtk ? '100-31' : '225-92') : ['100-168', '100-31', '200-51', '225-92'][Math.floor(Math.random()*4)];
+    const ip = key.replace('-', '.') + ".x.x", isInt = key.startsWith('100');
+    const p = document.createElement('div'); p.className = 'packet';
+    p.innerHTML = `<div class="packet-icon">${currentMode==='web'?'🖼️':'✉️'}</div><div class="packet-ip">${ip}</div>`;
+    const startX = isInt ? stage.offsetWidth + 100 : -200;
+    p.style.left = startX + 'px'; p.style.top = (Math.random()*(stage.offsetHeight-160)+80)+'px';
+    stage.appendChild(p);
+    let curX = startX, judged = false, speed = isInt ? -4 : 4;
+    const move = setInterval(() => {
+      curX += speed; p.style.left = curX + 'px';
+      if (!judged && Math.abs(curX - stage.offsetWidth/2) < 20) {
+        judged = true;
+        let res = (document.getElementById(`rule-${key}`).value === 'allow') ? 'PASS' : 'DENY';
+        if(res==='PASS') curAllow++; else curDeny++;
+        showJudgement(stage.offsetWidth/2, parseInt(p.style.top), res);
+        addLog(ip, res);
+        if (res==='DENY') { clearInterval(move); p.style.transition='0.5s'; p.style.transform='scale(2)'; p.style.opacity='0'; setTimeout(()=>p.remove(),500); }
+      }
+      if (curX > stage.offsetWidth+350 || curX < -350) { clearInterval(move); p.remove(); }
+    }, 20);
+  }
+
+  function showJudgement(x, y, res) {
+    const d = document.createElement('div'); d.className='judgement'; d.style.left=(x-70)+'px'; d.style.top=(y-35)+'px';
+    d.style.color=res==='PASS'?'var(--success)':'var(--danger)'; d.innerText=res==='PASS'?'PASS ✅':'BLOCK ❌';
+    stage.appendChild(d); setTimeout(()=>d.remove(), 900);
+  }
+
+  setInterval(() => {
+    histAllow.push(curAllow); histDeny.push(curDeny); histAllow.shift(); histDeny.shift();
+    curAllow = 0; curDeny = 0;
+    const bars = document.getElementsByClassName('bar-stack');
+    for(let i=0; i<barCount; i++){
+      bars[i].querySelector('.b-allow').style.height = Math.min(histAllow[i]*20, 200)+'px';
+      bars[i].querySelector('.b-deny').style.height = Math.min(histDeny[i]*20, 200)+'px';
+    }
+  }, 500);
+
+  setInterval(() => { if (!document.hidden && !isDDoS) createPacket(); }, 2000);
+</script>
+</body>
+</html>
